@@ -87,6 +87,8 @@ internal unsafe class RendererSDL : Renderer
 	private nint textureUploadBuffer;
 	private uint textureUploadBufferOffset;
 	private uint textureUploadCycleCount;
+	private nint textureDownloadBuffer;
+	private int textureDownloadBufferSize;
 	private nint bufferUploadBuffer;
 	private uint bufferUploadBufferOffset;
 	private uint bufferUploadCycleCount;
@@ -194,6 +196,17 @@ internal unsafe class RendererSDL : Renderer
 				props = 0
 			});
 			textureUploadBufferOffset = 0;
+		}
+
+		// create texture download buffer
+		{
+			textureDownloadBuffer = SDL_CreateGPUTransferBuffer(device, new()
+			{
+				usage = SDL_GPUTransferBufferUsage.SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD,
+				size = TransferBufferSize,
+				props = 0
+			});
+			textureDownloadBufferSize = (int)TransferBufferSize;
 		}
 
 		// create buffer upload buffer
@@ -540,7 +553,66 @@ internal unsafe class RendererSDL : Renderer
 
 	public override void GetTextureData(IHandle texture, nint data, int length)
 	{
-		throw new NotImplementedException();
+		if (device == nint.Zero)
+			throw deviceNotCreated;
+
+		// get texture
+		TextureResource res = (TextureResource)texture;
+		if (res.Renderer != this)
+			throw deviceWasDestroyed;
+
+		if (textureDownloadBufferSize < length)
+		{
+			SDL_ReleaseGPUTransferBuffer(device, textureDownloadBuffer);
+
+			SDL_GPUTransferBufferCreateInfo info = new()
+			{
+				usage = SDL_GPUTransferBufferUsage.SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD,
+				size = (uint)length,
+				props = 0
+			};
+			
+			textureDownloadBuffer = SDL_CreateGPUTransferBuffer(device, info);
+			textureDownloadBufferSize = length;
+		}
+
+		// download from the gpu
+		{
+			BeginCopyPass();
+
+			SDL_GPUTextureRegion region = new()
+			{
+				texture = res.Texture,
+				layer = 0,
+				mip_level = 0,
+				x = 0,
+				y = 0,
+				z = 0,
+				w = (uint)res.Width,
+				h = (uint)res.Height,
+				d = 1
+			};
+
+			SDL_GPUTextureTransferInfo info = new()
+			{
+				transfer_buffer = textureDownloadBuffer,
+				offset = 0,
+				pixels_per_row = (uint)res.Width, // TODO: FNA3D uses 0
+				rows_per_layer = (uint)res.Height, // TODO: FNA3D uses 0
+			};
+
+			SDL_DownloadFromGPUTexture(copyPass, region, info);
+		}
+
+		// flush and stall so the data is up to date
+		FlushCommandsAndStall();
+
+		// copy data
+		{
+			byte* src = (byte*)SDL_MapGPUTransferBuffer(device, textureDownloadBuffer, false);
+			Buffer.MemoryCopy(src, (void*)data, length, length);
+			SDL_UnmapGPUTransferBuffer(device, textureDownloadBuffer);
+		}
 	}
 
 	public void DestroyTexture(IHandle texture)
