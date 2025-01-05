@@ -208,12 +208,24 @@ public struct Rect : IConvexShape, IEquatable<Rect>
 
 	}
 
-	public Rect(in Vector2 from, in Vector2 to)
+	public Rect(in Vector2 from, in Vector2 size)
 	{
-		X = Math.Min(from.X, to.X);
-		Y = Math.Min(from.Y, to.Y);
-		Width = Math.Max(from.X, to.X) - X;
-		Height = Math.Max(from.Y, to.Y) - Y;
+		X = from.X;
+		Y = from.Y;
+		Width = size.X;
+		Height = size.Y;
+
+		if (Width < 0f)
+		{
+			X += Width;
+			Width = MathF.Abs(Width);
+		}
+		if (Height < 0f)
+		{
+			Y += Height;
+			Height = MathF.Abs(Height);
+		}
+
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
