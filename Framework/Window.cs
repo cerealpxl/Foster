@@ -6,7 +6,8 @@ namespace Foster.Framework;
 
 public sealed class Window : IDrawableTarget
 {
-	internal nint Handle { get; private set; }
+	public nint Handle { get; private set; }
+	
 	internal readonly uint ID;
 
 	private string title;
